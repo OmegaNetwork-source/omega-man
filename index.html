@@ -156,10 +156,38 @@
     </style>
 </head>
 <body style="margin:0; background:#111; min-height:100vh; display:flex; align-items:center; justify-content:center;">
+    <!-- Mode Selection Modal -->
+    <div id="mode-modal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.92);z-index:2000;display:flex;align-items:center;justify-content:center;">
+      <div style="background:#181818;padding:48px 32px;border-radius:16px;box-shadow:0 0 32px #0008;text-align:center;min-width:320px;">
+        <h2 style="color:#fff;font-size:2.2rem;margin-bottom:32px;">How do you want to play?</h2>
+        <button id="play-points-btn" style="background:linear-gradient(90deg,#0ff,#fff);color:#111;font-size:1.3rem;padding:16px 32px;margin:12px 0;width:100%;border:none;border-radius:8px;cursor:pointer;font-family:'VT323',monospace;">Play For Points</button>
+        <div style="color:#aaa;margin:12px 0;">or</div>
+        <button id="play-free-btn" style="background:#222;color:#fff;font-size:1.3rem;padding:16px 32px;width:100%;border:1px solid #fff;border-radius:8px;cursor:pointer;font-family:'VT323',monospace;">Play For Free</button>
+        <div id="arcade-deposit-notice" style="color:#f33;font-size:1.1rem;margin-top:12px;display:none;">You must deposit at least 5 ARCADE tokens to play for points.</div>
+      </div>
+    </div>
     <div id="game-container">
       <canvas id="gameCanvas"></canvas>
       <div id="sidePanel">
         <h1>OMEGA-MAN</h1>
+        <!-- Arcade Credits Section (hidden by default) -->
+        <div id="arcade-credits-section" style="display:none;flex-direction:column;align-items:center;margin-bottom:18px;">
+          <div style="color:#0ff;font-size:1.1rem;margin-bottom:6px;">Arcade Credits: <span id="arcade-credits">0</span></div>
+          <div style="color:#fff;font-size:1rem;margin-bottom:6px;">ARCADE Balance: <span id="arcade-balance">0</span></div>
+          <input id="arcade-deposit-amount" type="number" min="1" placeholder="Amount" style="width:120px;padding:8px 12px;font-size:1.2rem;margin-bottom:8px;border-radius:6px;border:1px solid #ccc;box-sizing:border-box;" />
+          <button id="arcade-deposit-btn" style="background:linear-gradient(90deg,#0ff,#fff);color:#111;border:none;border-radius:6px;padding:8px 18px;font-size:1.1rem;cursor:pointer;">Deposit</button>
+          <div id="arcade-deposit-status" style="color:#aaa;font-size:0.95rem;margin-top:4px;"></div>
+        </div>
+        <div id="insert-token-container" style="display: flex; flex-direction: column; align-items: center; margin-bottom: 18px;">
+          <button id="insert-token-btn" style="background: linear-gradient(90deg, #0ff, #fff); border: none; border-radius: 50%; width: 64px; height: 64px; box-shadow: 0 0 16px #0ff8, 0 0 4px #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 8px; transition: box-shadow 0.2s;">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="18" cy="18" r="16" stroke="#111" stroke-width="4" fill="#fff"/>
+              <circle cx="18" cy="18" r="10" stroke="#0ff" stroke-width="3" fill="none"/>
+              <rect x="15" y="10" width="6" height="16" rx="3" fill="#0ff"/>
+            </svg>
+          </button>
+          <span style="color: #0ff; font-size: 1.1rem; letter-spacing: 1px;">Insert Token</span>
+        </div>
         <div id="score">Score: 0</div>
         <div id="lives">Lives: 3</div>
         <div id="wallet-section">
@@ -168,6 +196,7 @@
         </div>
         <div id="leaderboard">
             <h2>Leaderboard</h2>
+            <button id="export-leaderboard-csv" style="margin-bottom:10px;background:#222;color:#0ff;border:1px solid #0ff;border-radius:6px;padding:6px 14px;font-family:'VT323',monospace;font-size:1.1rem;cursor:pointer;">Export as CSV</button>
             <ol id="leaderboard-list">
                 <li>Connect wallet to see scores.</li>
             </ol>
@@ -269,6 +298,30 @@
     ];
     let provider, signer, leaderboardContract, userAccount;
     
+    // --- ARCADE TOKEN/DEPOSIT CONFIG ---
+    const arcadeDepositAddress = "0x78e40a706fe36eaa94c5388600f1667dd92bb2c6";
+    const arcadeTokenAddress = "0xFF3fD61427d3485c8e33cb5f5999EAd9639C56a5";
+    const arcadeDepositABI = [
+      {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"deposit","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
+      {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"user","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"TokenDeposited","type":"event"},
+      {"inputs":[],"name":"admin","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"arcadeToken","outputs":[{"internalType":"contract IERC20","name":"","type":"address"}],"stateMutability":"view","type":"function"}
+    ];
+    const erc20ABI = [
+      {"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},
+      {"constant":false,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"success","type":"bool"}],"type":"function"},
+      {"constant":true,"inputs":[{"name":"_owner","type":"address"},{"name":"_spender","type":"address"}],"name":"allowance","outputs":[{"name":"remaining","type":"uint256"}],"type":"function"},
+      {"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"success","type":"bool"}],"type":"function"},
+      {"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"}
+    ];
+    let arcadeDepositContract, arcadeTokenContract;
+    let arcadeCredits = 0;
+    let playMode = null; // 'points' or 'free'
+
+    // Add a global flag to track if user can play for points
+    let canPlayForPoints = false;
+
     // --- DRAWING ---
     function draw() {
         ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -543,6 +596,22 @@
         updateScoreDisplay();
         updateLivesDisplay();
         overlayEl.style.display = 'none';
+        if (playMode === 'points') {
+            document.getElementById('wallet-section').style.display = '';
+            document.getElementById('arcade-credits-section').style.display = 'flex';
+            document.getElementById('leaderboard').style.display = '';
+            // If not enough deposit, show overlay and block game
+            if (!canPlayForPoints) {
+                showBlockPlayOverlay();
+            } else {
+                hideBlockPlayOverlay();
+            }
+        } else {
+            document.getElementById('wallet-section').style.display = 'none';
+            document.getElementById('arcade-credits-section').style.display = 'none';
+            document.getElementById('leaderboard').style.display = 'none';
+            hideBlockPlayOverlay();
+        }
     }
 
     function endGame() {
@@ -607,6 +676,7 @@
             walletStatusEl.textContent = truncated;
             connectWalletBtn.textContent = 'Connected';
             connectWalletBtn.disabled = true;
+            if (playMode === 'points') updateArcadeBalances();
             updateLeaderboard();
         } else {
             userAccount = null;
@@ -640,6 +710,14 @@
     }
     
     async function submitScore(finalScore) {
+        if (playMode !== 'points') {
+            alert("You must Play For Points and deposit ARCADE tokens to submit your score.");
+            return;
+        }
+        if (!canPlayForPoints) {
+            alert("You must deposit at least 5 ARCADE tokens to submit your score.");
+            return;
+        }
         if (!leaderboardContract || !signer) {
             alert("Please connect your wallet to submit your score.");
             return;
@@ -675,6 +753,7 @@
     // --- CONTROLS ---
     window.addEventListener('keydown', e => {
         if (['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) {
+            if (playMode === 'points' && !canPlayForPoints) return;
             e.preventDefault();
             const keyMap = { 'ArrowUp': 0, 'ArrowRight': 1, 'ArrowDown': 2, 'ArrowLeft': 3 };
             omega.nextDir = keyMap[e.key];
@@ -682,6 +761,7 @@
     });
 
     function handleMobile(dir) {
+        if (playMode === 'points' && !canPlayForPoints) return;
         omega.nextDir = dir;
     }
 
@@ -699,7 +779,11 @@
         lastTime = timestamp;
 
         if (!gamePaused) {
-            update(dt);
+            if (playMode === 'points' && !canPlayForPoints) {
+                // Block game update
+            } else {
+                update(dt);
+            }
         }
         
         draw();
@@ -733,10 +817,195 @@
 
     document.getElementById('new-game-btn').addEventListener('click', () => {
         resetGame();
+        // Deduct 5 Arcade Credits if playing for points
+        if (playMode === 'points') {
+            arcadeCredits -= 5;
+            if (arcadeCredits < 0) arcadeCredits = 0;
+            document.getElementById('arcade-credits').textContent = arcadeCredits;
+            updateArcadeBalances();
+            if (arcadeCredits < 5) {
+                canPlayForPoints = false;
+                showBlockPlayOverlay();
+            }
+        }
     });
 
     document.getElementById('submit-score-btn').addEventListener('click', () => {
         submitScore(score);
+    });
+
+    // --- MODE SELECTION LOGIC ---
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('mode-modal').style.display = 'flex';
+      document.getElementById('play-points-btn').onclick = () => selectMode('points');
+      document.getElementById('play-free-btn').onclick = () => selectMode('free');
+      // Add deposit notice
+      let notice = document.createElement('div');
+      notice.id = 'arcade-deposit-notice';
+      notice.style = 'color:#f33;font-size:1.1rem;margin-top:12px;display:none;';
+      notice.textContent = 'You must deposit at least 5 ARCADE tokens to play for points.';
+      document.getElementById('mode-modal').querySelector('div').appendChild(notice);
+    });
+
+    function selectMode(mode) {
+      playMode = mode;
+      document.getElementById('mode-modal').style.display = 'none';
+      if (mode === 'points') {
+        document.getElementById('wallet-section').style.display = '';
+        document.getElementById('arcade-credits-section').style.display = 'flex';
+        document.getElementById('leaderboard').style.display = '';
+        initWallet();
+        initArcadeContracts();
+        updateArcadeBalances();
+        canPlayForPoints = arcadeCredits >= 5;
+      } else {
+        document.getElementById('wallet-section').style.display = 'none';
+        document.getElementById('arcade-credits-section').style.display = 'none';
+        document.getElementById('leaderboard').style.display = 'none';
+        canPlayForPoints = true;
+      }
+      resetGame();
+    }
+
+    // --- ARCADE CONTRACTS INIT ---
+    function initArcadeContracts() {
+      if (window.ethereum) {
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        signer = provider.getSigner();
+        arcadeDepositContract = new ethers.Contract(arcadeDepositAddress, arcadeDepositABI, signer);
+        arcadeTokenContract = new ethers.Contract(arcadeTokenAddress, erc20ABI, signer);
+        updateArcadeBalances();
+      }
+      document.getElementById('arcade-deposit-btn').onclick = handleArcadeDeposit;
+    }
+
+    async function updateArcadeBalances() {
+      if (!userAccount || !arcadeTokenContract) return;
+      const decimals = await arcadeTokenContract.decimals();
+      const bal = await arcadeTokenContract.balanceOf(userAccount);
+      document.getElementById('arcade-balance').textContent = ethers.utils.formatUnits(bal, decimals);
+      document.getElementById('arcade-credits').textContent = arcadeCredits;
+      const playBtn = document.getElementById('play-points-btn');
+      const depositNotice = document.getElementById('arcade-deposit-notice');
+      if (playBtn && depositNotice) {
+        if (arcadeCredits < 5) {
+          playBtn.disabled = true;
+          depositNotice.style.display = 'block';
+          canPlayForPoints = false;
+        } else {
+          playBtn.disabled = false;
+          depositNotice.style.display = 'none';
+          canPlayForPoints = true;
+        }
+      }
+    }
+
+    async function handleArcadeDeposit() {
+      const statusEl = document.getElementById('arcade-deposit-status');
+      const amountInput = document.getElementById('arcade-deposit-amount');
+      let amount = amountInput.value;
+      if (!amount || isNaN(amount) || Number(amount) <= 0) {
+        statusEl.textContent = 'Enter a valid amount.';
+        return;
+      }
+      if (Number(amount) < 5) {
+        statusEl.textContent = 'Minimum deposit is 5 ARCADE tokens.';
+        return;
+      }
+      amount = ethers.utils.parseUnits(amount, 18);
+      try {
+        statusEl.textContent = 'Approving...';
+        const tx1 = await arcadeTokenContract.approve(arcadeDepositAddress, amount);
+        await tx1.wait();
+        statusEl.textContent = 'Depositing...';
+        const tx2 = await arcadeDepositContract.deposit(amount);
+        await tx2.wait();
+        statusEl.textContent = 'Deposit successful!';
+        arcadeCredits += Number(ethers.utils.formatUnits(amount, 18));
+        updateArcadeBalances();
+        if (arcadeCredits >= 5) {
+          canPlayForPoints = true;
+          hideBlockPlayOverlay();
+        }
+      } catch (e) {
+        statusEl.textContent = 'Deposit failed.';
+        console.error(e);
+      }
+    }
+
+    // Overlay to block play if not enough deposit
+    function showBlockPlayOverlay() {
+      let overlay = document.getElementById('block-play-overlay');
+      const canvas = document.getElementById('gameCanvas');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'block-play-overlay';
+        overlay.style = 'position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:30;display:flex;align-items:center;justify-content:center;pointer-events:auto;';
+        overlay.innerHTML = '<div style="background:#181818;padding:48px 32px;border-radius:16px;box-shadow:0 0 32px #0008;text-align:center;min-width:320px;"><h2 style="color:#fff;font-size:2.2rem;margin-bottom:32px;">Deposit Required</h2><div style="color:#f33;font-size:1.2rem;">You must deposit at least 5 ARCADE tokens to play for points.</div></div>';
+        // Insert overlay as a sibling to the canvas, absolutely positioned over it
+        const gameContainer = document.getElementById('game-container');
+        gameContainer.style.position = 'relative';
+        canvas.parentNode.insertBefore(overlay, canvas.nextSibling);
+        // Position overlay over the canvas
+        overlay.style.width = canvas.offsetWidth + 'px';
+        overlay.style.height = canvas.offsetHeight + 'px';
+        overlay.style.left = canvas.offsetLeft + 'px';
+        overlay.style.top = canvas.offsetTop + 'px';
+      } else {
+        overlay.style.display = 'flex';
+        // Reposition overlay in case of resize
+        overlay.style.width = canvas.offsetWidth + 'px';
+        overlay.style.height = canvas.offsetHeight + 'px';
+        overlay.style.left = canvas.offsetLeft + 'px';
+        overlay.style.top = canvas.offsetTop + 'px';
+      }
+    }
+    function hideBlockPlayOverlay() {
+      let overlay = document.getElementById('block-play-overlay');
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    // Add window resize handler to reposition overlay if visible
+    window.addEventListener('resize', () => {
+      let overlay = document.getElementById('block-play-overlay');
+      const canvas = document.getElementById('gameCanvas');
+      if (overlay && overlay.style.display !== 'none') {
+        overlay.style.width = canvas.offsetWidth + 'px';
+        overlay.style.height = canvas.offsetHeight + 'px';
+        overlay.style.left = canvas.offsetLeft + 'px';
+        overlay.style.top = canvas.offsetTop + 'px';
+      }
+    });
+
+    // Add CSV export logic after updateLeaderboard()
+    document.getElementById('export-leaderboard-csv').addEventListener('click', async () => {
+      if (!leaderboardContract) {
+        alert('Connect wallet to load leaderboard.');
+        return;
+      }
+      try {
+        const scores = await leaderboardContract.getLeaderboard();
+        if (!scores.length) {
+          alert('No scores to export.');
+          return;
+        }
+        let csv = 'Player,Score\n';
+        for (const entry of scores) {
+          csv += `${entry.player},${entry.score}\n`;
+        }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'omega-man-leaderboard.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Failed to export leaderboard.');
+        console.error(e);
+      }
     });
 
     init();
